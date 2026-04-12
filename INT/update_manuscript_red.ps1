@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $wdColorRed = 255
+$wdYellow = 7
 $wdStyleNormal = -1
 $wdStyleHeading2 = -3
 $wdAlignParagraphCenter = 1
@@ -15,19 +16,15 @@ $wdLineStyleSingle = 1
 $wdLineSpaceSingle = 0
 
 Set-Location -LiteralPath $PSScriptRoot
-$outputName = 'manuscript_' + [string]([char]0x526F) + [string]([char]0x672C) + '.docx'
+$copySuffix = [string]([char]0x526F) + [string]([char]0x672C)
+$sourceName = 'manuscript - ' + $copySuffix + '.docx'
+$backupName = 'manuscript - ' + $copySuffix + '.before_revision.docx'
 $workingName = 'manuscript_copy_red.docx'
-try {
-    Copy-Item -LiteralPath 'manuscript.docx' -Destination $workingName -Force
+$outputName = $sourceName
+if (-not (Test-Path -LiteralPath $backupName)) {
+    Copy-Item -LiteralPath $sourceName -Destination $backupName -Force
 }
-catch {
-    if (Test-Path -LiteralPath $outputName) {
-        Copy-Item -LiteralPath $outputName -Destination $workingName -Force
-    }
-    elseif (-not (Test-Path -LiteralPath $workingName)) {
-        throw
-    }
-}
+Copy-Item -LiteralPath $backupName -Destination $workingName -Force
 
 $baseline = Import-Csv -LiteralPath 'anova_outputs\03_baseline_characteristics.csv'
 $main = Import-Csv -LiteralPath 'anova_outputs\13_main_result_table_full.csv'
@@ -45,6 +42,11 @@ function Get-ParaText($para) {
     return (($para.Range.Text -replace "[`r`a]", '') -replace '\s+', ' ').Trim()
 }
 
+function Set-RevisionStyle($range) {
+    $range.Font.Color = $wdColorRed
+    $range.HighlightColorIndex = $wdYellow
+}
+
 function Find-ParaIndex([string]$prefix) {
     for ($i = 1; $i -le $doc.Paragraphs.Count; $i++) {
         $txt = Get-ParaText $doc.Paragraphs.Item($i)
@@ -59,7 +61,7 @@ function Replace-ParagraphText([string]$prefix, [string]$newText) {
     $style = $para.Range.Style
     $para.Range.Text = $newText + "`r"
     $para.Range.Style = $style
-    $doc.Range($para.Range.Start, $para.Range.End - 1).Font.Color = $wdColorRed
+    Set-RevisionStyle ($doc.Range($para.Range.Start, $para.Range.End - 1))
 }
 
 function Replace-SubstringInParagraph([string]$prefix, [string]$old, [string]$new) {
@@ -70,7 +72,7 @@ function Replace-SubstringInParagraph([string]$prefix, [string]$old, [string]$ne
     $updated = $text.Replace($old, $new)
     $para.Range.Text = $updated + "`r"
     $para.Range.Style = $style
-    $doc.Range($para.Range.Start, $para.Range.End - 1).Font.Color = $wdColorRed
+    Set-RevisionStyle ($doc.Range($para.Range.Start, $para.Range.End - 1))
 }
 
 function Delete-RangeBetweenHeadings([string]$startHeading, [string]$endHeading) {
@@ -85,11 +87,16 @@ function Delete-RangeBetweenHeadings([string]$startHeading, [string]$endHeading)
 }
 
 function Add-RedParagraph([string]$text, [int]$style = $wdStyleNormal, [int]$align = 0) {
+    $start = [int]$sel.Range.Start
     $sel.Style = $style
     $sel.Font.Color = $wdColorRed
     $sel.ParagraphFormat.Alignment = $align
     $sel.ParagraphFormat.LineSpacingRule = $wdLineSpaceSingle
     $sel.TypeText($text)
+    $end = [int]$sel.Range.End
+    if ($end -gt $start) {
+        Set-RevisionStyle ($doc.Range($start, $end))
+    }
     $sel.TypeParagraph()
 }
 
@@ -98,6 +105,7 @@ function Add-RedTable([object[][]]$rows) {
     $colCount = $rows[0].Count
     $table = $doc.Tables.Add($sel.Range, $rowCount, $colCount)
     $table.Range.Font.Color = $wdColorRed
+    $table.Range.HighlightColorIndex = $wdYellow
     $table.Range.Font.Name = 'Times New Roman'
     for ($r = 1; $r -le $rowCount; $r++) {
         for ($c = 1; $c -le $colCount; $c++) {
@@ -206,14 +214,18 @@ $unitMap = @{
     'fms_rotary_r' = 'score'
 }
 
+$titleText = 'Effects of an 8-Week Integrated Neuromuscular Training Program on Lower-Limb Explosive Power, Functional Movement Screen, and Swimming Start Performance in Young Swimmers'
+$objectiveText = 'Objective: This study aimed to investigate the effects of an 8-week INT program on lower-limb explosive power, functional movement quality, and swimming start performance in young competitive swimmers.'
 $ethicsLine = 'Ethics approval and consent to participate: approved by the Ethics Committee of Chengdu Sport University, Sichuan, China (approval code [ETHICS APPROVAL CODE TO BE INSERTED]). Participants provided assent, and written informed consent was obtained from their parents or legal guardians before participation.'
 $ethicsParagraph = 'This study was approved by the Ethics Committee of Chengdu Sport University, Sichuan, China (approval code [ETHICS APPROVAL CODE TO BE INSERTED]). All procedures were conducted in accordance with the Declaration of Helsinki.'
 $consentParagraph = 'Participants provided assent, and written informed consent was obtained from their parents or legal guardians before participation in the study.'
 
-$abstractMethods = 'Methods: Seventeen competitive adolescent swimmers (age: 10.5 +/- 1.4 years) were randomly assigned to either an INT group (INTG, n = 9) or a conventional training group (CON, n = 8). The INTG performed a progressive INT program twice weekly for 8 weeks, whereas the CON completed traditional strength and conditioning over the same period. Outcomes included the standard 7-item Functional Movement Screen total score (0-21), individual FMS task scores, squat jump, countermovement jump, standing long jump, and swimming-start variables. The primary analysis was a 2 x 2 mixed repeated-measures ANOVA with Group (CON vs INTG) and Visit (Pre vs Post), with the Group x Visit interaction treated as the primary effect of interest. Holm-adjusted post hoc comparisons and ANCOVA sensitivity analyses (Post ~ Group + Pre) were performed when appropriate.'
+$abstractMethods = 'Methods: Seventeen young competitive swimmers (age: 10.5 +/- 1.4 years) were randomly assigned to either an INT group (INTG, n = 9) or a conventional training group (CON, n = 8). The INTG performed a progressive INT program twice weekly for 8 weeks, whereas the CON completed traditional strength and conditioning over the same period. Outcome measures included the standard 7-item Functional Movement Screen (FMS) total score (0-21), individual FMS task scores, squat jump, countermovement jump, standing long jump, and swimming-start variables. The primary analysis was a 2 x 2 mixed repeated-measures ANOVA with Group (CON vs INTG) and Visit (Pre vs Post), with the Group x Visit interaction treated as the primary effect of interest. Holm-adjusted post hoc comparisons and ANCOVA sensitivity analyses (Post ~ Group + Pre) were performed when appropriate.'
 $abstractResults = 'Results: Significant Group x Visit interactions favored INTG for 15-m sprint time, water-entry distance, horizontal displacement (Delta x), horizontal velocity, FMS Total (0-21), FMS Hurdle Step (right and left), and FMS In-line Lunge (right) (all p < 0.05). ANCOVA sensitivity analyses supported these findings after baseline adjustment. No significant group-by-visit interactions were observed for the generic lower-limb explosive power outcomes.'
+$abstractConclusion = 'Conclusion: An 8-week INT program was more effective than conventional training for improving swimming-start performance and functional movement quality in young swimmers. These findings suggest that INT facilitates better transfer of dry-land neuromuscular adaptations to swimming-specific explosive actions.'
+$keywordsText = 'Keywords: Youth swimmers; Competitive swimming; Integrated neuromuscular training; Functional movement screen; Start performance'
 
-$participantsText = 'Seventeen competitive adolescent swimmers (6 males, 11 females; age: 10.5 +/- 1.4 years; height: 149.0 +/- 13.5 cm; body mass: 37.9 +/- 10.7 kg) were recruited from DY Olympic School on 31 March 2025, a government-supported adolescent training department. All participants met the following inclusion criteria: (i) a minimum of one year of systematic swimming training; (ii) classification as Tier 2 (developmental athletes) according to the participant classification framework; (iii) proficiency in all four competitive swimming strokes; and (iv) regular supervised aquatic training with a frequency of no fewer than three weekly sessions under the same head coach. Athletes were free from musculoskeletal, neurological, or orthopedic disorders within the previous 6 months and did not take nutritional supplements or medications known to affect physical performance. Sample-size planning was aligned to the final mixed repeated-measures ANOVA framework. Using G*Power (version 3.1.9; Heinrich Heine University, Duesseldorf, Germany), the unified settings were F tests, ANOVA: repeated measures, within-between interaction, with alpha = 0.05, power = 0.80, two groups, two measurements, and a medium effect size (f = 0.25). The 15-m sprint time outcome was used as the representative primary endpoint because it most directly reflects swimming-start performance. Because the accessible competitive cohort was limited, all eligible swimmers were enrolled, resulting in a final sample of 17 participants. The protocol was approved by the Ethics Committee of Chengdu Sport University, Sichuan, China (approval code [ETHICS APPROVAL CODE TO BE INSERTED]). Participants provided assent, and written informed consent was obtained from their parents or legal guardians before participation.'
+$participantsText = 'Seventeen young competitive swimmers (6 males, 11 females; age: 10.5 +/- 1.4 years; height: 149.0 +/- 13.5 cm; body mass: 37.9 +/- 10.7 kg) were recruited from a local youth competitive swimming program in Chengdu, Sichuan, China, on 31 March 2025. All participants met the following inclusion criteria: (i) a minimum of one year of systematic swimming training; (ii) classification as Tier 2 (developmental athletes) according to the participant classification framework; (iii) proficiency in all four competitive swimming techniques; and (iv) regular supervised aquatic training with a frequency of no fewer than three weekly sessions under the same head coach. Athletes were free from musculoskeletal, neurological, or orthopedic disorders within the previous 6 months and did not take nutritional supplements or medications known to affect physical performance. Sample-size planning was aligned to the final mixed repeated-measures ANOVA framework. Using G*Power (version 3.1.9; Heinrich Heine University, Duesseldorf, Germany), the unified settings were F tests, ANOVA: repeated measures, within-between interaction, with alpha = 0.05, power = 0.80, two groups, two measurements, and a medium effect size (f = 0.25). The 15-m sprint time outcome was used as the representative primary endpoint because it most directly reflects swimming-start performance. Because the accessible competitive cohort was limited, all eligible swimmers were enrolled, resulting in a final sample of 17 participants. The protocol was approved by the Ethics Committee of Chengdu Sport University, Sichuan, China (approval code [ETHICS APPROVAL CODE TO BE INSERTED]). Participants provided assent, and written informed consent was obtained from their parents or legal guardians before participation.'
 
 $statsPara1 = 'All data are presented as mean (SD) for continuous variables or n (%) for categorical variables. Pre- and post-intervention records were matched one-to-one using participant number, participant name, and group after standardization of spacing, character width, letter case, and group coding. For FMS, the standard total score (0-21) was derived using the 7-item scoring algorithm by summing Deep Squat, Trunk Stability Push-Up, and the lower score from each bilateral task. The primary analytic framework was a 2 x 2 mixed repeated-measures ANOVA with Group (CON vs INTG) as the between-subject factor and Visit (Pre vs Post) as the within-subject factor. The Group x Visit interaction was treated as the primary effect of interest. For each outcome, F values, degrees of freedom, p values, and partial eta squared were reported.'
 $statsPara2 = 'Holm-adjusted post hoc comparisons were conducted only when the interaction effect was significant or when additional interpretation of the trajectory was required, including within-group Pre vs Post contrasts and between-group contrasts at each visit. Within-group pre-to-post standardized changes were additionally summarized using Cohen''s d based on the pooled pre/post standard deviation. Assumption checks included normality and homogeneity assessments, and potential outliers were screened using studentized residuals. ANCOVA models specified as Post ~ Group + Pre were performed as sensitivity analyses to evaluate whether the mixed ANOVA findings remained consistent after baseline adjustment. All analyses were performed in R (version 4.5.2; R Foundation for Statistical Computing, Vienna, Austria), and statistical significance was set at p < 0.05.'
@@ -233,22 +245,30 @@ $sensitivityPara = "The ANCOVA sensitivity analyses, specified as post-test outc
 $supplementaryPara = 'The remaining performance and FMS variables are reported in the Supplementary Materials. These outputs include the full mixed ANOVA results for all 21 outcomes, Holm-adjusted post hoc comparisons, assumption checks, outlier screening, and ANCOVA models. To maintain a focused Results section, these secondary and exploratory findings are not described in detail here.'
 
 $discussionPurpose = 'The purpose of this study was to examine the effects of an 8-week integrated neuromuscular training (INT) program on start performance, functional movement quality, and lower-limb explosive performance in competitive swimmers. The main findings indicate that INT produced more favorable pre-to-post trajectories than conventional training for several start-performance and movement-quality outcomes. Significant Group x Visit interactions were observed for 15-m sprint time, water-entry distance, horizontal displacement (Delta x), horizontal velocity, FMS Total (0-21), FMS Hurdle Step (right and left), and FMS In-line Lunge (right), whereas no significant group-by-visit interactions were found for the generic lower-limb explosive power outcomes. The ANCOVA sensitivity analyses supported the same pattern after baseline adjustment. Together, these findings suggest that INT improved the transfer of dry-land neuromuscular adaptations to swimming-start performance and functional movement quality rather than producing broad between-group differences across all jump-based measures.'
-$discussionResults = 'Our results demonstrate that the 8-week INT intervention conferred substantial advantages in the trajectory of start-specific performance. Relative to CON, INTG showed a more favorable pre-to-post pattern for 15-m sprint time, water-entry distance, horizontal displacement, and horizontal velocity, with significant Group x Visit interactions across these outcomes. Post hoc contrasts indicated clear within-group improvements in INTG, whereas CON showed either smaller changes or changes in the opposite direction. Thus, the primary evidence in favor of INT was the differential change over time rather than isolated post-test comparisons.'
+$discussionResults = 'These findings demonstrate that the 8-week INT intervention conferred substantial advantages in the trajectory of start-specific performance. Relative to CON, INTG showed a more favorable pre-to-post pattern for 15-m sprint time, water-entry distance, horizontal displacement, and horizontal velocity, with significant Group x Visit interactions across these outcomes. Post hoc contrasts indicated clear within-group improvements in INTG, whereas CON showed either smaller changes or changes in the opposite direction. Thus, the primary evidence in favor of INT was the differential change over time rather than isolated post-test comparisons.'
 $conclusionText = 'This study demonstrates that an 8-week integrated neuromuscular training (INT) program improved start-related performance and movement quality in youth swimmers. Compared with conventional training, INT produced more favorable pre-to-post changes in 15-m sprint time, water-entry distance, horizontal displacement, horizontal velocity, and selected FMS outcomes, while generic lower-limb explosive power outcomes did not show significant group-by-visit interactions. These findings suggest that INT is an effective dry-land strategy for improving the movement quality and swimming-start mechanics of young swimmers.'
 $startMethodText = 'Start performance was evaluated using 15-m sprint time, water-entry distance, and horizontal velocity. The 15-m sprint time test was conducted in a standard 50 m indoor swimming pool with water temperature maintained at 27 C. All participants used a grab start and were instructed to perform the start, water entry, and initial acceleration phase with maximal effort following the starting signal. Timing began at the start signal and ended when the participant''s head crossed the vertical plane of the 15 m mark. Performance was recorded using an automatic timing system. Each participant completed two trials separated by a 10-min rest period, and the best time was used for statistical analysis.'
 $kinematicsText = 'To further examine the biomechanical mechanisms underlying differences in start performance, two-dimensional kinematic analysis was used to quantify key parameters during the take-off and flight phase. Video data were captured using a high-speed camera (GoPro 7; GoPro Inc., USA) operating at a sampling frequency of 120 Hz and a resolution of 1080p, positioned at poolside 5 m from the centerline of the starting block and at a height of 120 cm. The optical axis was aligned perpendicular to the pool''s longitudinal axis to ensure full capture of the movement from take-off to complete water entry (Supplementary Figure S1). All videos were processed in Kinovea to calculate horizontal displacement (Delta x) and flight-time difference (Delta t) from toe-off to initial head contact with the water, from which horizontal velocity was derived(31). To minimize the influence of fatigue, all in-water tests were performed 48 h after the final dry-land test session and were supervised by the same experienced swimming coach to ensure consistency of testing procedures and technique.'
+$fmsMethodText = 'FMS is a screening tool comprising seven specific tests used to evaluate overall functional movement quality(30). Each item is scored on a 0-3 scale, including the deep squat, hurdle step, in-line lunge, shoulder mobility, active straight-leg raise, trunk stability push-up, and rotary stability. A score of 3 indicates that the participant can perform the movement correctly without pain; a score of 2 indicates that the movement can be completed without pain but with compensation; and a score of 1 indicates inability to complete the movement as instructed. If pain occurs at any point during the movement, the score is 0. The standard total FMS score therefore ranges from 0 to 21. In athletic populations, the FMS has been used as a practical field-based screen of movement quality and has shown acceptable reliability when standardized assessor training is applied(30,43). In the present study, the evaluator completed standardized familiarization with the scoring criteria before data collection.'
+$limitationsText = 'Several limitations of the present study should be acknowledged. First, biological maturation was not directly assessed, which is important in this age range and may have contributed to inter-individual variability in adaptation. Second, because of the nature of the intervention, participants and coaches could not be blinded, although outcome assessors were kept blinded to group allocation. Third, although the statistical strategy was revised to a mixed repeated-measures ANOVA and confirmed by ANCOVA sensitivity analyses, the modest sample size still limits the precision of secondary-outcome estimates. Fourth, start kinematics were quantified from two-dimensional video and focused primarily on horizontal variables; the full resultant velocity vector and its vertical component were not analyzed. Fifth, FMS scoring was completed by trained assessors but was not independently duplicated by a second rater. Finally, the study focused on short-term adaptations after 8 weeks, so the long-term retention of these changes remains unclear.'
+$practicalConclusionText = 'Practically, coaches working with young swimmers may consider integrating two structured INT sessions per week that emphasize unilateral control, dynamic stability, and horizontally oriented explosive tasks. These sessions should complement regular swimming practice rather than replace it, especially when improving start performance and movement quality is a training priority.'
 $discussionBiomech = 'From a biomechanical perspective, the swimming start represents a complex multi-joint movement requiring the rapid generation of horizontal impulse within a severely constrained temporal window. Unlike vertical jumping activities where ground contact duration permits progressive force development, the swimming start demands near-maximal force production within approximately 300-400 milliseconds of block contact, followed immediately by aerial transition(29,35). These specific demands are highly consistent with the principle of force-vector specificity highlighted in recent literature. A meta-analysis showed that horizontally oriented plyometric exercises are more effective at enhancing forward acceleration than vertical exercises(36). Specifically, an 8-week intervention demonstrated that horizontal-vector resistance training yielded superior improvements in swim-start performance compared with traditional vertical-vector training(37). This helps explain the divergent adaptations observed in our study. By incorporating horizontally oriented stretch-shortening-cycle activities, the INT program more closely matched the mechanical demands of the starting block, contributing to the increases in horizontal velocity and water-entry distance. In contrast, the CON program relied primarily on exercises that emphasized general maximal strength and therefore showed less transfer to the specific demands of the start.'
 
 try {
+    Replace-ParagraphText 'Effects of an 8-Week Integrated Neuromuscular Training Program on Lower-Limb Explosive Power and Swimming Start Performance in Adolescent Swimmers' $titleText
     Replace-ParagraphText 'Ethics approval and consent to participate:' $ethicsLine
     Replace-ParagraphText 'This study was approved by the Ethics Committee of Chengdu Sports University.' $ethicsParagraph
+    Replace-ParagraphText 'Objective:' $objectiveText
     Replace-ParagraphText 'Methods:' $abstractMethods
     Replace-ParagraphText 'Results:' $abstractResults
+    Replace-ParagraphText 'Conclusion:' $abstractConclusion
+    Replace-ParagraphText 'Keywords:' $keywordsText
 
     $participantsPos = Delete-RangeBetweenHeadings '2.1 Participants' '2.2 Integrated Neuromuscular Training Testing Procedures'
     $sel.SetRange([int]$participantsPos, [int]$participantsPos)
     Add-RedParagraph $participantsText
 
+    Replace-ParagraphText 'FMS is a screening tool comprising seven specific tests used to evaluate overall functional movement capacity' $fmsMethodText
     Replace-ParagraphText 'Start performance was evaluated using three outcomes:' $startMethodText
     Replace-ParagraphText 'To further examine the biomechanical mechanisms underlying differences in start performance' $kinematicsText
     Replace-ParagraphText 'Figure 1 Schematic diagram of the experimental swimming lane configuration' 'Supplementary Figure S1. Schematic diagram of the experimental swimming lane configuration.'
@@ -347,7 +367,12 @@ try {
     Replace-ParagraphText 'The purpose of this study was to examine the effects of an 8-week integrated neuromuscular training (INT) program on start performance, functional movement quality, and lower-limb explosive performance in competitive swimmers.' $discussionPurpose
     Replace-ParagraphText 'Our results demonstrate that the 8-week INT intervention conferred substantial advantages in enhancing start-specific performance in competitive swimmers.' $discussionResults
     Replace-ParagraphText 'From a biomechanical perspective' $discussionBiomech
+    Replace-ParagraphText 'Several limitations of the present study should be acknowledged.' $limitationsText
     Replace-ParagraphText 'This study demonstrates that an 8-week integrated neuromuscular training' $conclusionText
+    $conclusionIdx = Find-ParaIndex 'This study demonstrates that an 8-week integrated neuromuscular training'
+    $conclusionInsert = [int]$doc.Paragraphs.Item($conclusionIdx).Range.End
+    $sel.SetRange($conclusionInsert, $conclusionInsert)
+    Add-RedParagraph $practicalConclusionText
 
     Replace-ParagraphText 'Ethical Approval' 'Ethical Approval'
     Replace-ParagraphText 'This study was approved by the Ethics Committee of Chengdu Sport University.' $ethicsParagraph
