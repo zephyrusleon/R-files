@@ -2,6 +2,12 @@
 
 This repository contains R-related research materials and, in this package, the current analysis workflow and manuscript outputs for the integrative neuromuscular training study in adolescent swimmers.
 
+## R project scripts
+
+- `适老化meta/`
+  - R scripts for the meta-analysis of urban built environments and physical activity among community-dwelling older adults.
+  - Includes the three-level meta-analysis workflow and PRISMA 2020 flow-diagram script.
+
 ## Manuscript package contents
 
 - `repeated_measures_anova_plan.R`
